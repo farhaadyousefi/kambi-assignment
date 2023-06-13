@@ -5,10 +5,20 @@ Make a call to an API with a json structure containing binary file and its neede
 
 ## Implementation
 1. The assignment has been implemented with java17 and as a spring boot application  
+> the `JAVA_HOME` as a system variable should be set and Java bin directory should be added to the `path` variable as well
 2. you can change the below default setting by modifining its concerend value in `src/main/resources` file  
 2-1) if the execution takes more than `5000 milliseconds`, the API will return response code `408`, for modify it, please change the value of `running.process.timeout` key based on the millisecond  
 2-2) If SIGINT is sent to the API, open threads should be fulfilled in `1 minute`. feel free to change it by modifying the value of the `spring.lifecycle.timeout-per-shutdown-phase` key based on minute 
+
 ## Running the app
+>note:
+>  for running `sudo` commands without a password prompt in Java, the `/etc/sudoers` file should be modified otherwise the request will be reached to timeout
+> ```shell
+> # for user
+> USER_THAT_RUN_THE_APP ALL= NOPASSWD: ALL
+> # for group
+> GROUP_OF_USER_THAT_RUN_THE_APP ALL= NOPASSWD: ALL
+> ```
 there are some options for running the applicaiton
 ### 1) in your local machine
 the only requrenment is `java JDK 17`  
@@ -19,7 +29,7 @@ please open a terminal and go to the root of the application then follow the bel
   ```$ java -jar target/binaryRunner-0.0.1-SNAPSHOT.jar```  
 
 ### 2) as a docker image  
-> warnning  
+> note:
 > the primary application responsibility is to run binary files on the OS, so I had to use a `Ubuntu` image instead of a simple image containing just `Java` so apologize for downloading the big image.
 >
 >

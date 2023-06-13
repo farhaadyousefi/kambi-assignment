@@ -20,6 +20,7 @@ import com.kambi.binaryrunner.dto.BinaryRunnerResponse;
 import com.kambi.binaryrunner.exception.BinaryRunningException;
 import com.kambi.binaryrunner.model.BinaryRunnerResult;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import java.io.InputStreamReader;
 import java.nio.file.Paths;
@@ -30,20 +31,37 @@ import static com.kambi.binaryrunner.model.CommandExitCode.FILE_NOT_FOUND;
 import static com.kambi.binaryrunner.model.CommandExitCode.TIMEOUT_REACHED;
 import static com.kambi.binaryrunner.model.CommandExitCode.INTERNAL_SERVER_ERROR;
 import static com.kambi.binaryrunner.model.CommandExitCode.FILE_PERMISSION_DENIED;
+import static com.kambi.binaryrunner.service.CommandExecutorBuilderStrategy.UNIX_BASE_SUPERUSER_COMMAND;
+import static com.kambi.binaryrunner.service.CommandExecutorBuilderStrategy.WINDOWS_SUPERUSER_COMMAND;;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class BinaryRunnerService {
-    // using three underlines for separating the command, options, and arguments.
-    // there is almost no command that contains 3 underlines
-    private static final String UNDERLINES = "___";
+    private final CommandExecutorBuilderStrategy commandExecutorBuilder;
 
     @Value("${running.process.timeout}")
     private long processTimeout;
 
+    private boolean runBySuperUser = false;
+
+    /*
+     * 1.validate the binary file, if requested to run with the
+     * superuser privilege, first, we should reach the binary file path anmd name 
+     * strategy design pattern has been used to create command runner based on the
+     * operation system
+     */
     public BinaryRunnerResponse binaryRunner(BinaryRunnerRequest request) throws BinaryRunningException {
-        var command = setCommand(request);
-        var binaryRunnerResult = executeBinary(command.split(UNDERLINES));
+        // reaching the binary file
+        var binaryFile = binaryFileSeperator(request.getBinaryFile().trim());
+
+        // binary file validaiton and set the command with its args
+        List<String> commands = setCommand(binaryFile, request.getArguments());
+
+        // create command runner builder based on os
+        var processBuilder = commandExecutorBuilder.commandExecuterBuilder(runBySuperUser, commands);
+
+        var binaryRunnerResult = executeBinary(processBuilder);
         var message = "the binary file execution result";
         if (binaryRunnerResult.exitCode() == SUCCESSFUL.getExitCode()) {
             String[] details = binaryRunnerResult.output().stream().toArray(String[]::new);
@@ -53,26 +71,53 @@ public class BinaryRunnerService {
         throw new BinaryRunningException(String.valueOf(binaryRunnerResult.exitCode()));
     }
 
-    private String setCommand(BinaryRunnerRequest request) {
-        String fullPath = setFullPathOfFile(request.getBinaryFile().trim());
-        var arguments = setAreguments(request.getArguments());
+    /*
+     * separating the run by super user command from the real binary file name and path.
+     */
+    private String binaryFileSeperator(String binaryFile) {
+        var os = System.getProperty("os.name").toLowerCase();
 
-        return fullPath + arguments;
+        if (os.contains("windows") && binaryFile.toLowerCase().startsWith(WINDOWS_SUPERUSER_COMMAND)) {
+            runBySuperUser = true;
+            return binaryFile.substring(WINDOWS_SUPERUSER_COMMAND.length()).trim();
+        } else if (binaryFile.toLowerCase().startsWith(UNIX_BASE_SUPERUSER_COMMAND)) {
+            runBySuperUser = true;
+            return binaryFile.substring(UNIX_BASE_SUPERUSER_COMMAND.length()).trim();
+        }
+        return binaryFile;
     }
 
     /*
      * validating the existence of executable file.
      * if fileName has no path, the application will check the current working
-     * directory and the user's home directory respectively.
+     * directory and the user's home directory respectively (has been handled by
+     * setFullPathOfFile()).
+     * 
+     * if the command should run by the admin or root user, for path and binary file
+     * validaiotn first we should remove for example sudo keyword (has been handled
+     * by checkRunAsAdmin()).
      */
-    private String setFullPathOfFile(String fileName) throws BinaryRunningException {
+    private List<String> setCommand(String binaryFile, List<String> args) {
+        String binaryFileWithFullPath = setFullPathOfFile(binaryFile);
+        List<String> finalCommand = new ArrayList<>();
+
+        finalCommand.add(binaryFileWithFullPath);
+        if (args != null && !args.isEmpty()) {
+            finalCommand.addAll(args);
+        }
+
+        return finalCommand;
+    }
+
+    private String setFullPathOfFile(String binaryFile) throws BinaryRunningException {
+
         var slash = "/";
-        var isFileExist = new File(fileName).exists();
+        var isFileExist = new File(binaryFile).exists();
 
         if (isFileExist) {
-            log.info("file has been found {}", fileName);
-            return fileName;
-        } else if (fileName.contains(slash)) { // inputed file contain invalid path
+            log.info("file has been found {}", binaryFile);
+            return binaryFile;
+        } else if (binaryFile.contains(slash)) { // inputed file contain invalid path
             throw new BinaryRunningException(String.valueOf(FILE_NOT_FOUND.getExitCode()));
         }
 
@@ -82,10 +127,10 @@ public class BinaryRunnerService {
         String[] otherPath = new String[] { workingDirectory, userHome };
 
         for (String path : otherPath) {
-            var file = new File(path + fileName);
+            var file = new File(path + binaryFile);
             if (file.exists()) {
-                log.info("full path of excutable file is {}{}", path, fileName);
-                return path + fileName;
+                log.info("full path of excutable file is {}{}", path, binaryFile);
+                return path + binaryFile;
             }
         }
 
@@ -93,28 +138,13 @@ public class BinaryRunnerService {
         throw new BinaryRunningException(String.valueOf(FILE_NOT_FOUND.getExitCode()));
     }
 
-    // setting all passed option(s) and argument(s)
-    private String setAreguments(List<String> arguments) {
-        if (arguments == null || arguments.isEmpty()) {
-            return "";
-        }
-
-        var argsBuilder = new StringBuilder();
-        for (String arg : arguments) {
-            argsBuilder.append(UNDERLINES).append(arg.trim());
-        }
-        return argsBuilder.toString();
-    }
-
-    private BinaryRunnerResult executeBinary(String[] command) {
-        log.info("start running {}", Arrays.toString(command));
+    private BinaryRunnerResult executeBinary(ProcessBuilder processBuilder) {
         var executorService = Executors.newSingleThreadExecutor();
         long startTime = System.currentTimeMillis();
         try {
             // running the command with the help of an auxiliary thread
             CompletableFuture<BinaryRunnerResult> future = CompletableFuture.supplyAsync(() -> {
                 try {
-                    var processBuilder = new ProcessBuilder(command);
                     var process = processBuilder.start();
 
                     var reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
@@ -126,14 +156,14 @@ public class BinaryRunnerService {
                     }
                     return new BinaryRunnerResult(process.waitFor(), output);
                 } catch (IOException ex) {
-                    log.error("exception during the execution of file {}", ex.getMessage());
                     var errorMessage = ex.getMessage().toLowerCase();
                     // the file is not executable or has no sufficient privileges
                     String[] permissionDenied = new String[] { "permission denied", "error=13" };
-
                     if (Arrays.stream(permissionDenied).anyMatch(errorMessage::contains)) {
                         return new BinaryRunnerResult(FILE_PERMISSION_DENIED.getExitCode(), null);
                     }
+
+                    log.error("exception during the execution of file {}", ex.getMessage(), ex);
                     return new BinaryRunnerResult(INTERNAL_SERVER_ERROR.getExitCode(), null);
                 } catch (InterruptedException e) {
                     log.error("exception during the execution of file {}", e.getMessage());
@@ -143,7 +173,7 @@ public class BinaryRunnerService {
 
             try {
                 var result = future.get(processTimeout, TimeUnit.MILLISECONDS);
-                log.info("excution of {} finished by exit code {}", command, result.exitCode());
+                log.info("excution finished by exit code {}", result.exitCode());
                 return result;
             } catch (TimeoutException e) {
                 log.error("execution timed out and has been cancelled");

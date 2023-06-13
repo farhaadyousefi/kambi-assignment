@@ -20,6 +20,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kambi.binaryrunner.dto.BinaryRunnerRequest;
 
 import static com.kambi.binaryrunner.BinaryRunnerServiceTest.DEFAULT_PATH;
+import static com.kambi.binaryrunner.BinaryRunnerServiceTest.DEFAULT_EXTENTION;
+import static com.kambi.binaryrunner.BinaryRunnerServiceTest.BINARY_FILES_WITH_EEROR;
+import static com.kambi.binaryrunner.BinaryRunnerServiceTest.CORRECT_BINARY_FILE;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
@@ -27,7 +30,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 public class BinaryRunnerIntegrationTest {
 
-    private final static String extention = ".sh";
     private final static List<String> args = new ArrayList<>();
     private final static String apiEndPint = "/api/v1/runner";
 
@@ -43,7 +45,7 @@ public class BinaryRunnerIntegrationTest {
 
     @Test
     public void testRunningBinarySuccessfully() throws Exception {
-        var absolutePath = DEFAULT_PATH + "ls" + extention;
+        var absolutePath = DEFAULT_PATH + CORRECT_BINARY_FILE + DEFAULT_EXTENTION;
         var request = new BinaryRunnerRequest(absolutePath, args);
         var jsonContent = objectMapper.writeValueAsString(request);
 
@@ -57,12 +59,10 @@ public class BinaryRunnerIntegrationTest {
 
     @Test
     public void testExpectedToReturn4XX() throws Exception {
-        String[] files = new String[] { "no_permission", "wrong_arg", "timeout_ls", "wrong_command" };
+        var executorService = Executors.newFixedThreadPool(BINARY_FILES_WITH_EEROR.length);
 
-        var executorService = Executors.newFixedThreadPool(files.length);
-
-        for (String file : files) {
-            var absolutePath = DEFAULT_PATH + file + extention;
+        for (String file : BINARY_FILES_WITH_EEROR) {
+            var absolutePath = DEFAULT_PATH + file + DEFAULT_EXTENTION;
             executorService.execute(() -> {
                 try {
                     var request = new BinaryRunnerRequest(absolutePath, args);
