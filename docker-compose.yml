@@ -1,0 +1,14 @@
+version: '3'
+services:
+  binary-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: binary-runner
+    restart: no
+    privileged: true
+    volumes:
+      - /:/host:ro
+      - ./scripts:/app/scripts
+    ports:
+      - "8080:8080"
