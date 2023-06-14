@@ -31,6 +31,7 @@ import static com.kambi.binaryrunner.model.CommandExitCode.FILE_NOT_FOUND;
 import static com.kambi.binaryrunner.model.CommandExitCode.TIMEOUT_REACHED;
 import static com.kambi.binaryrunner.model.CommandExitCode.INTERNAL_SERVER_ERROR;
 import static com.kambi.binaryrunner.model.CommandExitCode.FILE_PERMISSION_DENIED;
+import static com.kambi.binaryrunner.model.CommandExitCode.NOT_COMPATIBLE_WITH_OS;
 import static com.kambi.binaryrunner.service.CommandExecutorBuilderStrategy.UNIX_BASE_SUPERUSER_COMMAND;
 import static com.kambi.binaryrunner.service.CommandExecutorBuilderStrategy.WINDOWS_SUPERUSER_COMMAND;;
 
@@ -45,16 +46,23 @@ public class BinaryRunnerService {
 
     private boolean runBySuperUser = false;
 
+    private static final String OS = System.getProperty("os.name").toLowerCase();
+    private static final String WINDOWS_OS = "windows";
+
     /*
      * 1.validate the binary file, if requested to run with the
-     * superuser privilege, first, we should reach the binary file path anmd name 
+     * superuser privilege, first, we should reach the binary file path anmd name
      * strategy design pattern has been used to create command runner based on the
      * operation system
      */
     public BinaryRunnerResponse binaryRunner(BinaryRunnerRequest request) throws BinaryRunningException {
         // reaching the binary file
         var binaryFile = binaryFileSeperator(request.getBinaryFile().trim());
-
+        var isCompatible = checkFileIsCompatibleWithOs(binaryFile);
+        if(!isCompatible){
+            throw new BinaryRunningException(String.valueOf(NOT_COMPATIBLE_WITH_OS.getExitCode()));
+        }
+        
         // binary file validaiton and set the command with its args
         List<String> commands = setCommand(binaryFile, request.getArguments());
 
@@ -71,13 +79,22 @@ public class BinaryRunnerService {
         throw new BinaryRunningException(String.valueOf(binaryRunnerResult.exitCode()));
     }
 
+    private boolean checkFileIsCompatibleWithOs(String binaryFile) {
+        if (OS.contains(WINDOWS_OS) && !binaryFile.endsWith(".bat")) {
+            return false;
+        } else if (!OS.contains(WINDOWS_OS) && !binaryFile.endsWith(".sh")) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
     /*
-     * separating the run by super user command from the real binary file name and path.
+     * separating the run by super user command from the real binary file name and
+     * path.
      */
     private String binaryFileSeperator(String binaryFile) {
-        var os = System.getProperty("os.name").toLowerCase();
-
-        if (os.contains("windows") && binaryFile.toLowerCase().startsWith(WINDOWS_SUPERUSER_COMMAND)) {
+        if (OS.contains(WINDOWS_OS) && binaryFile.toLowerCase().startsWith(WINDOWS_SUPERUSER_COMMAND)) {
             runBySuperUser = true;
             return binaryFile.substring(WINDOWS_SUPERUSER_COMMAND.length()).trim();
         } else if (binaryFile.toLowerCase().startsWith(UNIX_BASE_SUPERUSER_COMMAND)) {

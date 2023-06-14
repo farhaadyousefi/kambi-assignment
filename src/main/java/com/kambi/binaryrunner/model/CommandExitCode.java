@@ -21,6 +21,7 @@ public enum CommandExitCode {
     FILE_PERMISSION_DENIED("Permission denied", 13, HttpStatus.FORBIDDEN),
     COMMAND_PERMISSION_DENIED("Permission denied", 126, HttpStatus.FORBIDDEN),
     COMMAND_NOT_FOUND("Command not found-please check the command and its options or arguments", 127, HttpStatus.NOT_FOUND),    
+    NOT_COMPATIBLE_WITH_OS("input file is not compatible with os", 193, HttpStatus.BAD_REQUEST),    
     INTERNAL_SERVER_ERROR("internal server error", 500, HttpStatus.INTERNAL_SERVER_ERROR); //for the rest of exit code
 
     private final String errorMessage;
